@@ -159,11 +159,11 @@ class TimerSelect(discord.ui.Select):
         await inter.response.send_message(f"⏰ **{chosen}** set → ends <t:{int(finish.timestamp())}:R>")
         asyncio.create_task(timer_end(inter.user, chosen, dur, inter))
 
-@tree.command(name="timer", description="Set timer")
+@tree.command(name="Reminders", description="Sets the timerfor Rifts, Bosses, SuperBosses or Raids")
 async def timer(inter):
     await inter.response.send_message("Select:", view=discord.ui.View().add_item(TimerSelect()))
 
-@tree.command(name="timers", description="List your timers")
+@tree.command(name="Timers", description="List your timers")
 async def timers(inter):
     await inter.response.send_message("✅ Timers work")
 
