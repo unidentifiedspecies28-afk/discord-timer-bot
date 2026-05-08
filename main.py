@@ -10,7 +10,7 @@ from threading import Thread
 # --------------------------
 # ✅ YOUR SETTINGS (ALREADY CORRECT)
 # --------------------------
-GAME_ID = 7095664523       # ✅ YOUR GAME ID
+GAME_ID = 13358463560       # ✅ YOUR GAME ID
 BOSS_CHANNEL_ID = 1502236106597470288   # ✅ BOSS CHANNEL
 RIFT_CHANNEL_ID = 1502236122615648326   # ✅ RIFT CHANNEL
 
