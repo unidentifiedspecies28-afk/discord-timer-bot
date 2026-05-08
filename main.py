@@ -1,10 +1,10 @@
 import sys
-# 1. FIXED: This part fixes the 'audioop' crash so the bot stays online
 import types
 sys.modules['audioop'] = types.ModuleType('audioop')
 
 import discord
 from discord.ext import commands
+from discord import app_commands
 import asyncio
 import os
 import requests
@@ -13,102 +13,100 @@ from flask import Flask
 from threading import Thread
 
 # --------------------------
-# 2. CONFIG: Paste your Webhooks here
+# CONFIG
 # --------------------------
-BOSS_WEBHOOK = "YOUR_BOSS_WEBHOOK_URL"
-RIFT_WEBHOOK = "YOUR_RIFT_WEBHOOK_URL"
+BOSS_WEBHOOK = "https://discord.com/api/webhooks/1502263569633509487/NGKjFf4EGD32m3UbuafIadrObSSiOxujGXvWcWLSQj8OEAHRcHw-X_Q0OnZOq1r8Ykvw"
+RIFT_WEBHOOK = "https://discord.com/api/webhooks/1502264183956308130/xLuNT-iod8k245vT_jx5u4pLVCasuwtLBAT0NjaJvR3IISH5UA3pjJ43T1bph6ENyzh-"
 
 COOLDOWNS = {
-    "Bosses": 3600,       # 1 Hour
-    "SuperBosses": 3600,  # 1 Hour
-    "Rifts": 1800,        # 30 Mins
-    "Raids": 7200         # 2 Hours
+    "Bosses": 3600, "SuperBosses": 3600, "Rifts": 1800, "Raids": 7200
 }
 
-# Keep Alive for Render
 app = Flask('')
 @app.route('/')
-def home(): return "Bot is Online"
+def home(): return "Bot Online"
 def run(): app.run(host='0.0.0.0', port=10000)
 def keep_alive(): Thread(target=run, daemon=True).start()
 keep_alive()
 
-intents = discord.Intents.default()
-intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+class MyBot(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.message_content = True
+        super().__init__(command_prefix="!", intents=intents)
 
+    async def setup_hook(self):
+        # This SYNC pokes Discord to show the / commands
+        print("Syncing slash commands...")
+        await self.tree.sync()
+        print("Slash commands synced!")
+
+bot = MyBot()
 active_servers = {}
 user_timers = {}
 
 # --------------------------
-# 3. SERVER ANNOUNCER (5m Warnings)
+# SERVER ANNOUNCER
 # --------------------------
 async def track_server(link, start_time):
     while link in active_servers:
         age = (datetime.now() - start_time).total_seconds()
-        
-        # Rift: 1h30m (5400s) | Boss: 2h (7200s)
         u_rift = 5400 - (age % 5400)
         u_boss = 7200 - (age % 7200)
 
-        # Rift Alert 5m before
         if 300 < u_rift <= 315:
             requests.post(RIFT_WEBHOOK, json={"content": f"🌀 **RIFT IN 5 MIN**\n👉 {link}"})
             await asyncio.sleep(300)
             if link in active_servers:
                 requests.post(RIFT_WEBHOOK, json={"content": f"🌀 **RIFT NOW**\n👉 {link}"})
 
-        # Boss Alert 5m before
         if 300 < u_boss <= 315:
             requests.post(BOSS_WEBHOOK, json={"content": f"🚨 **BOSS IN 5 MIN**\n👉 {link}"})
             await asyncio.sleep(300)
             if link in active_servers:
                 requests.post(BOSS_WEBHOOK, json={"content": f"🚨 **BOSS NOW**\n👉 {link}"})
-
         await asyncio.sleep(15)
 
-@bot.command()
-async def addserver(ctx, link: str, hours: int, minutes: int):
-    """Adds a server once and repeats alerts forever"""
+# --------------------------
+# SLASH COMMANDS
+# --------------------------
+@bot.tree.command(name="addserver", description="Track a new server")
+async def addserver(interaction: discord.Interaction, link: str, hours: int, minutes: int):
     uptime = (hours * 3600) + (minutes * 60)
     start = datetime.now() - timedelta(seconds=uptime)
     active_servers[link] = start
-    await ctx.send(f"✅ Tracking: {link}\nAlerts split to Boss/Rift channels with 5m warnings.")
+    await interaction.response.send_message(f"✅ Tracking: {link}")
     asyncio.create_task(track_server(link, start))
 
-# --------------------------
-# 4. PERSONAL TIMERS (Pings & Checks)
-# --------------------------
-@bot.command()
-async def timer(ctx, t_type: str = None):
-    if not t_type or t_type not in COOLDOWNS:
-        return await ctx.send(f"Usage: !timer [Bosses|SuperBosses|Rifts|Raids]")
-    
-    uid = ctx.author.id
+@bot.tree.command(name="timer", description="Start a personal cooldown timer")
+@app_commands.choices(t_type=[
+    app_commands.Choice(name="Bosses", value="Bosses"),
+    app_commands.Choice(name="SuperBosses", value="SuperBosses"),
+    app_commands.Choice(name="Rifts", value="Rifts"),
+    app_commands.Choice(name="Raids", value="Raids")
+])
+async def timer(interaction: discord.Interaction, t_type: str):
+    uid = interaction.user.id
     if uid not in user_timers: user_timers[uid] = {}
     user_timers[uid][t_type] = datetime.now()
     
     end = datetime.now() + timedelta(seconds=COOLDOWNS[t_type])
-    await ctx.send(f"⏰ {t_type} set! Ready <t:{int(end.timestamp())}:R>")
+    await interaction.response.send_message(f"⏰ {t_type} set! Ready <t:{int(end.timestamp())}:R>")
     
     await asyncio.sleep(COOLDOWNS[t_type])
     
     if uid in user_timers and t_type in user_timers[uid]:
         del user_timers[uid][t_type]
         others = user_timers.get(uid, {})
-        # FIXED: This pings the user and tells them if others are running
         status = f"\nKeep going! Other active: {', '.join(others.keys())}" if others else "\nAll your cooldowns are done!"
-        await ctx.send(f"🔔 <@{uid}> **{t_type} DONE!**{status}")
+        await interaction.channel.send(f"🔔 <@{uid}> **{t_type} DONE!**{status}")
 
-@bot.command()
-async def timers(ctx):
-    active = user_timers.get(ctx.author.id, {})
-    if not active: return await ctx.send("No active timers.")
+@bot.tree.command(name="timers", description="View your active timers")
+async def timers(interaction: discord.Interaction):
+    active = user_timers.get(interaction.user.id, {})
+    if not active: 
+        return await interaction.response.send_message("No active timers.")
     msg = "\n".join([f"• {n}: <t:{int((s + timedelta(seconds=COOLDOWNS[n])).timestamp())}:R>" for n, s in active.items()])
-    await ctx.send(f"⏰ **Your Timers:**\n{msg}")
-
-@bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user}")
+    await interaction.response.send_message(f"⏰ **Your Timers:**\n{msg}")
 
 bot.run(os.getenv("BOT_TOKEN"))
