@@ -18,7 +18,7 @@ from threading import Thread
 # --------------------------
 BOSS_WEBHOOK = "https://discord.com/api/webhooks/1502263569633509487/NGKjFf4EGD32m3UbuafIadrObSSiOxujGXvWcWLSQj8OEAHRcHw-X_Q0OnZOq1r8Ykvw"
 RIFT_WEBHOOK = "https://discord.com/api/webhooks/1502264183956308130/xLuNT-iod8k245vT_jx5u4pLVCasuwtLBAT0NjaJvR3IISH5UA3pjJ43T1bph6ENyzh-"
-"
+
 
 COOLDOWNS = {
     "Bosses": 3600, "SuperBosses": 3600, "Rifts": 1800, "Raids": 7200
