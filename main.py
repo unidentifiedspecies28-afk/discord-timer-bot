@@ -43,7 +43,7 @@ async def run_timer(user_id, name, duration, interaction):
         
         # This line pings the user correctly
         await interaction.channel.send(
-            f"🔔 <@{user_id}> Your **{name}** cooldown is finished! Go go go!"
+            f"🔔 <@{user_id}> Your **{name}** cooldown is finished!"
         )
         
         # Cleanup
