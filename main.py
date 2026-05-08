@@ -1,6 +1,7 @@
-# 🔧 FIX AUDIOOP ERROR — BLOCK IT BEFORE IT LOADS
 import sys
-sys.modules['audioop'] = type('fake_audioop', (), {})()
+# 1. FIXED: This part fixes the 'audioop' crash so the bot stays online
+import types
+sys.modules['audioop'] = types.ModuleType('audioop')
 
 import discord
 from discord.ext import commands
@@ -12,144 +13,102 @@ from flask import Flask
 from threading import Thread
 
 # --------------------------
-# ✅ YOUR SETTINGS
+# 2. CONFIG: Paste your Webhooks here
 # --------------------------
-BOSS_WEBHOOK_URL = "https://discordapp.com/api/webhooks/1502263569633509487/NGKjFf4EGD32m3UbuafIadrObSSiOxujGXvWcWLSQj8OEAHRcHw-X_Q0OnZOq1r8Ykvw"
-RIFT_WEBHOOK_URL = "https://discordapp.com/api/webhooks/1502264183956308130/xLuNT-iod8k245vT_jx5u4pLVCasuwtLBAT0NjaJvR3IISH5UA3pjJ43T1bph6ENyzh-"
-
-RIFT_CYCLE = 5400    # 1h30m
-BOSS_CYCLE = 7200    # 2h
-WARNING_SEC = 300    # ⏰ 5 MIN BEFORE
+BOSS_WEBHOOK = "YOUR_BOSS_WEBHOOK_URL"
+RIFT_WEBHOOK = "YOUR_RIFT_WEBHOOK_URL"
 
 COOLDOWNS = {
-    "Bosses": 3600, "SuperBosses": 3600, "Rifts": 1800, "Raids": 7200
+    "Bosses": 3600,       # 1 Hour
+    "SuperBosses": 3600,  # 1 Hour
+    "Rifts": 1800,        # 30 Mins
+    "Raids": 7200         # 2 Hours
 }
 
-# --------------------------
-# KEEP ALIVE
-# --------------------------
+# Keep Alive for Render
 app = Flask('')
 @app.route('/')
-def home(): return "Bot Online ✅"
+def home(): return "Bot is Online"
 def run(): app.run(host='0.0.0.0', port=10000)
 def keep_alive(): Thread(target=run, daemon=True).start()
 keep_alive()
 
-# --------------------------
-# BOT SETUP
-# --------------------------
 intents = discord.Intents.default()
 intents.message_content = True
-intents.voice_states = False
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 active_servers = {}
 user_timers = {}
 
 # --------------------------
-# 📢 WEBHOOKS
+# 3. SERVER ANNOUNCER (5m Warnings)
 # --------------------------
-def send_boss_alert(message):
-    try: requests.post(BOSS_WEBHOOK_URL, json={"content": message})
-    except: pass
+async def track_server(link, start_time):
+    while link in active_servers:
+        age = (datetime.now() - start_time).total_seconds()
+        
+        # Rift: 1h30m (5400s) | Boss: 2h (7200s)
+        u_rift = 5400 - (age % 5400)
+        u_boss = 7200 - (age % 7200)
 
-def send_rift_alert(message):
-    try: requests.post(RIFT_WEBHOOK_URL, json={"content": message})
-    except: pass
+        # Rift Alert 5m before
+        if 300 < u_rift <= 315:
+            requests.post(RIFT_WEBHOOK, json={"content": f"🌀 **RIFT IN 5 MIN**\n👉 {link}"})
+            await asyncio.sleep(300)
+            if link in active_servers:
+                requests.post(RIFT_WEBHOOK, json={"content": f"🌀 **RIFT NOW**\n👉 {link}"})
 
-# --------------------------
-# 🤖 SERVER TRACKER — 5 MIN WARNING
-# --------------------------
-async def track_server(join_link, server_start_time):
-    while join_link in active_servers:
-        server_age = (datetime.now() - server_start_time).total_seconds()
-
-        until_rift = RIFT_CYCLE - (server_age % RIFT_CYCLE)
-        until_boss = BOSS_CYCLE - (server_age % BOSS_CYCLE)
-
-        # 🌀 RIFT
-        if WARNING_SEC < until_rift <= WARNING_SEC + 10:
-            send_rift_alert(f"🌀 **RIFT SPAWNING IN 5 MINUTES!**\n👉 **JOIN**: {join_link}")
-            await asyncio.sleep(WARNING_SEC)
-            if join_link in active_servers:
-                send_rift_alert(f"🌀 **RIFT IS SPAWNING NOW!**\n👉 {join_link}")
-
-        # 🚨 BOSS
-        if WARNING_SEC < until_boss <= WARNING_SEC + 10:
-            send_boss_alert(f"🌀 **BOSS SPAWNING IN 5 MINUTES!**\n👉 **JOIN**: {join_link}")
-            await asyncio.sleep(WARNING_SEC)
-            if join_link in active_servers:
-                send_boss_alert(f"🚨 **BOSS IS SPAWNING NOW!**\n👉 {join_link}")
+        # Boss Alert 5m before
+        if 300 < u_boss <= 315:
+            requests.post(BOSS_WEBHOOK, json={"content": f"🚨 **BOSS IN 5 MIN**\n👉 {link}"})
+            await asyncio.sleep(300)
+            if link in active_servers:
+                requests.post(BOSS_WEBHOOK, json={"content": f"🚨 **BOSS NOW**\n👉 {link}"})
 
         await asyncio.sleep(15)
 
+@bot.command()
+async def addserver(ctx, link: str, hours: int, minutes: int):
+    """Adds a server once and repeats alerts forever"""
+    uptime = (hours * 3600) + (minutes * 60)
+    start = datetime.now() - timedelta(seconds=uptime)
+    active_servers[link] = start
+    await ctx.send(f"✅ Tracking: {link}\nAlerts split to Boss/Rift channels with 5m warnings.")
+    asyncio.create_task(track_server(link, start))
+
 # --------------------------
-# ⌨️ COMMANDS
+# 4. PERSONAL TIMERS (Pings & Checks)
 # --------------------------
 @bot.command()
-async def addserver(ctx, join_link: str, hours: int, minutes: int):
-    if join_link in active_servers:
-        return await ctx.send("❌ Already tracking this server.")
-
-    uptime_seconds = (hours * 3600) + (minutes * 60)
-    start_time = datetime.now() - timedelta(seconds=uptime_seconds)
-    active_servers[join_link] = start_time
-
-    await ctx.send(f"✅ SERVER ADDED\nAlerts split to Boss/Rift channels | 5min warning active")
-    asyncio.create_task(track_server(join_link, start_time))
-
-@bot.command()
-async def removeserver(ctx, join_link: str):
-    if join_link in active_servers:
-        del active_servers[join_link]
-        await ctx.send("🗑️ Server removed.")
-    else:
-        await ctx.send("❌ Server not found.")
-
-# --------------------------
-# ⏰ TIMERS — PING + STATUS
-# --------------------------
-@bot.command()
-async def timer(ctx, timer_type: str = None):
-    if not timer_type or timer_type not in COOLDOWNS:
-        return await ctx.send(f"❌ Usage: !timer [Bosses|SuperBosses|Rifts|Raids]")
-
+async def timer(ctx, t_type: str = None):
+    if not t_type or t_type not in COOLDOWNS:
+        return await ctx.send(f"Usage: !timer [Bosses|SuperBosses|Rifts|Raids]")
+    
     uid = ctx.author.id
     if uid not in user_timers: user_timers[uid] = {}
-    user_timers[uid][timer_type] = datetime.now()
-    end = datetime.now() + timedelta(seconds=COOLDOWNS[timer_type])
-
-    await ctx.send(f"⏰ **{timer_type}** started! Ends <t:{int(end.timestamp())}:R>")
-
-    await asyncio.sleep(COOLDOWNS[timer_type])
-
-    if uid in user_timers and timer_type in user_timers[uid]:
-        del user_timers[uid][timer_type]
-        remaining = user_timers.get(uid, {})
-        if remaining:
-            list_rem = ", ".join([f"**{n}**" for n in remaining.keys()])
-            extra = f"\n📌 Still running: {list_rem}"
-        else:
-            extra = "\n✅ All cooldowns done!"
-        await ctx.send(f"🔔 <@{uid}> **{timer_type} COOLDOWN DONE!**{extra}")
+    user_timers[uid][t_type] = datetime.now()
+    
+    end = datetime.now() + timedelta(seconds=COOLDOWNS[t_type])
+    await ctx.send(f"⏰ {t_type} set! Ready <t:{int(end.timestamp())}:R>")
+    
+    await asyncio.sleep(COOLDOWNS[t_type])
+    
+    if uid in user_timers and t_type in user_timers[uid]:
+        del user_timers[uid][t_type]
+        others = user_timers.get(uid, {})
+        # FIXED: This pings the user and tells them if others are running
+        status = f"\nKeep going! Other active: {', '.join(others.keys())}" if others else "\nAll your cooldowns are done!"
+        await ctx.send(f"🔔 <@{uid}> **{t_type} DONE!**{status}")
 
 @bot.command()
 async def timers(ctx):
-    uid = ctx.author.id
-    active = user_timers.get(uid, {})
-    if not active: return await ctx.send("✅ No active timers.")
-    msg = "⏰ **YOUR TIMERS**\n"
-    for name, start in active.items():
-        end = start + timedelta(seconds=COOLDOWNS[name])
-        msg += f"• {name}: Ready <t:{int(end.timestamp())}:R>\n"
-    await ctx.send(msg)
+    active = user_timers.get(ctx.author.id, {})
+    if not active: return await ctx.send("No active timers.")
+    msg = "\n".join([f"• {n}: <t:{int((s + timedelta(seconds=COOLDOWNS[n])).timestamp())}:R>" for n, s in active.items()])
+    await ctx.send(f"⏰ **Your Timers:**\n{msg}")
 
-# --------------------------
-# START
-# --------------------------
 @bot.event
 async def on_ready():
-    print(f"✅ LOGGED IN: {bot.user} | NO AUDIOOP ERROR")
+    print(f"Logged in as {bot.user}")
 
-if __name__ == "__main__":
-    bot.run(os.getenv("BOT_TOKEN"))
+bot.run(os.getenv("BOT_TOKEN"))
