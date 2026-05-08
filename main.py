@@ -1,6 +1,6 @@
 import sys
 import types
-# Bypasses the audioop error for Python 3.14
+# Bypasses the audioop error for Python 3.14 on Render
 sys.modules['audioop'] = types.ModuleType('audioop')
 
 import discord
@@ -14,14 +14,13 @@ from flask import Flask
 from threading import Thread
 
 # --------------------------
-# CONFIG
+# CONFIG (Paste your Webhooks)
 # --------------------------
 BOSS_WEBHOOK = "https://discord.com/api/webhooks/1502263569633509487/NGKjFf4EGD32m3UbuafIadrObSSiOxujGXvWcWLSQj8OEAHRcHw-X_Q0OnZOq1r8Ykvw"
 RIFT_WEBHOOK = "https://discord.com/api/webhooks/1502264183956308130/xLuNT-iod8k245vT_jx5u4pLVCasuwtLBAT0NjaJvR3IISH5UA3pjJ43T1bph6ENyzh-"
 
-
 COOLDOWNS = {
-    "Bosses": 3600, "SuperBosses": 3600, "Rifts": 1800, "Raids": 7200
+    "Bosses": 3600, "SuperBosses": 3600, "Rifts": 1800, "Raids": 7200, "Test": 10
 }
 
 app = Flask('')
@@ -38,7 +37,6 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        # This makes the slash commands appear in Discord
         await self.tree.sync()
 
 bot = MyBot()
@@ -54,14 +52,12 @@ async def track_server(link, start_time):
         u_rift = 5400 - (age % 5400)
         u_boss = 7200 - (age % 7200)
 
-        # Rift Alert
         if 300 < u_rift <= 315:
             requests.post(RIFT_WEBHOOK, json={"content": f"🌀 **RIFT IN 5 MIN**\n👉 {link}"})
             await asyncio.sleep(300)
             if link in active_servers:
                 requests.post(RIFT_WEBHOOK, json={"content": f"🌀 **RIFT NOW**\n👉 {link}"})
 
-        # Boss Alert
         if 300 < u_boss <= 315:
             requests.post(BOSS_WEBHOOK, json={"content": f"🚨 **BOSS IN 5 MIN**\n👉 {link}"})
             await asyncio.sleep(300)
@@ -85,34 +81,35 @@ async def addserver(interaction: discord.Interaction, link: str, hours: int, min
     app_commands.Choice(name="Bosses", value="Bosses"),
     app_commands.Choice(name="SuperBosses", value="SuperBosses"),
     app_commands.Choice(name="Rifts", value="Rifts"),
-    app_commands.Choice(name="Raids", value="Raids")
+    app_commands.Choice(name="Raids", value="Raids"),
+    app_commands.Choice(name="Test", value="Test")
 ])
 async def timer(interaction: discord.Interaction, t_type: str):
     uid = interaction.user.id
+    channel_id = interaction.channel_id # Save the channel ID specifically
+    
     if uid not in user_timers: user_timers[uid] = {}
     user_timers[uid][t_type] = datetime.now()
     
     end = datetime.now() + timedelta(seconds=COOLDOWNS[t_type])
-    
-    # Confirming the timer started
     await interaction.response.send_message(f"⏰ {t_type} set! Ready <t:{int(end.timestamp())}:R>")
     
-    # Wait for the cooldown
+    # Wait for the cooldown duration
     await asyncio.sleep(COOLDOWNS[t_type])
     
-    # Check if timer is still valid
+    # Double check user and timer still exist
     if uid in user_timers and t_type in user_timers[uid]:
         del user_timers[uid][t_type]
         others = user_timers.get(uid, {})
         
-        # STATUS MESSAGE
-        if others:
-            status = f"Keep going! Your other active timers: **{', '.join(others.keys())}**"
+        status = f"Keep going! Other active: **{', '.join(others.keys())}**" if others else "All your cooldowns are finished!"
+        
+        # We fetch the channel fresh to ensure the ping sends
+        channel = bot.get_channel(channel_id)
+        if channel:
+            await channel.send(f"🔔 <@{uid}> **Your {t_type} cooldown is DONE!**\n{status}")
         else:
-            status = "All your cooldowns are finished!"
-            
-        # THE PING: Sends a message mentioning you directly
-        await interaction.channel.send(f"🔔 <@{uid}> **Your {t_type} cooldown is DONE!**\n{status}")
+            print(f"Could not find channel {channel_id} to ping user {uid}")
 
 @bot.tree.command(name="timers", description="View your active timers")
 async def timers(interaction: discord.Interaction):
