@@ -16,11 +16,11 @@ from threading import Thread
 # --------------------------
 # CONFIG
 # --------------------------
-BOSS_WEBHOOK = "https://discord.com/api/webhooks/1502263569633509487/NGKjFf4EGD32m3UbuafIadrObSSiOxujGXvWcWLSQj8OEAHRcHw-X_Q0OnZOq1r8Ykvw"
-RIFT_WEBHOOK = "https://discord.com/api/webhooks/1502264183956308130/xLuNT-iod8k245vT_jx5u4pLVCasuwtLBAT0NjaJvR3IISH5UA3pjJ43T1bph6ENyzh-"
+BOSS_WEBHOOK = "YOUR_BOSS_WEBHOOK_URL"
+RIFT_WEBHOOK = "YOUR_RIFT_WEBHOOK_URL"
 
 COOLDOWNS = {
-    "Bosses": 3600, "SuperBosses": 3600, "Rifts": 1800, "Raids": 7200, "Test": 10
+    "Bosses": 3600, "SuperBosses": 3600, "Rifts": 1800, "Raids": 7200, "Test": 15
 }
 
 app = Flask('')
@@ -38,30 +38,27 @@ class MyBot(commands.Bot):
 
     async def setup_hook(self):
         await self.tree.sync()
-        self.check_timers.start() # Start the bulletproof background checker
+        self.check_timers.start()
 
-    # BULLETPROOF BACKGROUND CHECKER
-    @tasks.loop(seconds=10)
+    # BACKGROUND CHECKER - Monitors for finished timers
+    @tasks.loop(seconds=5)
     async def check_timers(self):
         now = datetime.now()
-        # We use list(user_timers.items()) to avoid "dictionary changed size" error
         for uid, timers in list(user_timers.items()):
             for t_type, data in list(timers.items()):
                 if now >= data['end']:
-                    # TIMER IS DONE
                     channel = self.get_channel(data['channel'])
                     if channel:
-                        # Remove this timer from list
+                        # Remove timer before pinging
                         del user_timers[uid][t_type]
                         
-                        # Check remaining
+                        # Check what else is running
                         others = user_timers.get(uid, {})
-                        status = f"Other active: **{', '.join(others.keys())}**" if others else "All done!"
+                        status = f"Other active: {', '.join(others.keys())}" if others else "All done!"
                         
-                        # SEND THE PING
-                        await channel.send(f"🔔 <@{uid}> **{t_type} DONE!**\n{status}")
+                        # THE PING: Format <@!USERID> as requested
+                        await channel.send(f"🔔 <@!{uid}> **{t_type}** timer is finished!\n{status}")
                     else:
-                        # If channel not found, just delete to prevent loop
                         del user_timers[uid][t_type]
 
 bot = MyBot()
@@ -69,17 +66,19 @@ active_servers = {}
 user_timers = {} # { uid: { type: {end: datetime, channel: int} } }
 
 # --------------------------
-# SERVER TRACKER (UNCHANGED)
+# SERVER TRACKER
 # --------------------------
 async def track_server(link, start_time):
     while link in active_servers:
         age = (datetime.now() - start_time).total_seconds()
         u_rift = 5400 - (age % 5400)
         u_boss = 7200 - (age % 7200)
+        
         if 300 < u_rift <= 315:
             requests.post(RIFT_WEBHOOK, json={"content": f"🌀 **RIFT IN 5 MIN**\n👉 {link}"})
             await asyncio.sleep(300)
             if link in active_servers: requests.post(RIFT_WEBHOOK, json={"content": f"🌀 **RIFT NOW**\n👉 {link}"})
+            
         if 300 < u_boss <= 315:
             requests.post(BOSS_WEBHOOK, json={"content": f"🚨 **BOSS IN 5 MIN**\n👉 {link}"})
             await asyncio.sleep(300)
@@ -97,7 +96,7 @@ async def addserver(interaction: discord.Interaction, link: str, hours: int, min
     await interaction.response.send_message(f"✅ Tracking: {link}")
     asyncio.create_task(track_server(link, start))
 
-@bot.tree.command(name="timer", description="Start a cooldown timer")
+@bot.tree.command(name="timer", description="Start a personal cooldown")
 @app_commands.choices(t_type=[
     app_commands.Choice(name="Bosses", value="Bosses"),
     app_commands.Choice(name="SuperBosses", value="SuperBosses"),
@@ -111,19 +110,23 @@ async def timer(interaction: discord.Interaction, t_type: str):
     
     end_time = datetime.now() + timedelta(seconds=COOLDOWNS[t_type])
     
-    # SAVE TO OUR CHECKER
     user_timers[uid][t_type] = {
         'end': end_time,
         'channel': interaction.channel_id
     }
     
-    await interaction.response.send_message(f"⏰ {t_type} set! Ready <t:{int(end_time.timestamp())}:R>")
+    await interaction.response.send_message(f"⏰ {t_type} set! Ends <t:{int(end_time.timestamp())}:R>")
 
-@bot.tree.command(name="timers", description="Check timers")
-async def timers(interaction: discord.Interaction):
+@bot.tree.command(name="viewtimers", description="View your personal timers")
+async def viewtimers(interaction: discord.Interaction):
     active = user_timers.get(interaction.user.id, {})
-    if not active: return await interaction.response.send_message("No active timers.")
-    msg = "\n".join([f"• {n}: <t:{int(d['end'].timestamp())}:R>" for n, d in active.items()])
-    await interaction.response.send_message(f"⏰ **Active Timers:**\n{msg}")
+    if not active: 
+        return await interaction.response.send_message("❌ You have no active timers.")
+    
+    msg = "⏰ **Your Active Cooldowns:**\n"
+    for name, data in active.items():
+        msg += f"• **{name}**: Ready <t:{int(data['end'].timestamp())}:R>\n"
+    
+    await interaction.response.send_message(msg)
 
 bot.run(os.getenv("BOT_TOKEN"))
