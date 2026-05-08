@@ -97,7 +97,7 @@ class TimerView(discord.ui.View):
         self.add_item(TimerSelect())
 
 # ---------------- COMMANDS ----------------
-@tree.command(name="timer", description="Start a cooldown timer")
+@tree.command(name="reminder", description="Start a cooldown timer")
 async def timer(interaction: discord.Interaction):
     await interaction.response.send_message("Select a cooldown:", view=TimerView())
 
