@@ -46,40 +46,8 @@ async def on_ready():
     print(f"✅ PYTHON VERSION RUNNING: {sys.version}")
 
 # --------------------------
-# 🤖 SERVER TRACKER (5min WARNING)
-# --------------------------
-async def track_server(link, start_time):
-    while link in active_servers:
-        age = (datetime.now() - start_time).total_seconds()
-        until_rift = 5400 - (age % 5400)  # 1h30m cycle
-        until_boss = 7200 - (age % 7200)  # 2h cycle
-
-        # 🌀 RIFT ALERTS
-        if 300 < until_rift <= 315:
-            requests.post(RIFT_WEBHOOK, json={"content": f"🌀 **RIFT SPAWNS IN 5 MIN**\n👉 {link}"})
-            await asyncio.sleep(300)
-            if link in active_servers:
-                requests.post(RIFT_WEBHOOK, json={"content": f"🌀 **RIFT SPAWNING NOW**\n👉 {link}"})
-
-        # 🚨 BOSS ALERTS
-        if 300 < until_boss <= 315:
-            requests.post(BOSS_WEBHOOK, json={"content": f"🚨 **BOSS SPAWNS IN 5 MIN**\n👉 {link}"})
-            await asyncio.sleep(300)
-            if link in active_servers:
-                requests.post(BOSS_WEBHOOK, json={"content": f"🚨 **BOSS SPAWNING NOW**\n👉 {link}"})
-
-        await asyncio.sleep(15)
-
-# --------------------------
 # 📝 SLASH COMMANDS
 # --------------------------
-@bot.tree.command(name="addserver", description="Add server to track spawns")
-async def addserver(interaction: discord.Interaction, link: str, hours: int, minutes: int):
-    uptime_sec = (hours * 3600) + (minutes * 60)
-    start_time = datetime.now() - timedelta(seconds=uptime_sec)
-    active_servers[link] = start_time
-    await interaction.response.send_message(f"✅ Now tracking:\n{link}")
-    bot.loop.create_task(track_server(link, start_time))
 
 @bot.tree.command(name="timer", description="Start a personal cooldown timer — resets if already running")
 @app_commands.choices(t_type=[
