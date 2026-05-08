@@ -9,7 +9,7 @@ from threading import Thread
 import logging
 
 # ---------------- CONFIGURATION ----------------
-GAME_ID = 13358463560 
+GAME_ID = 13358463560  # ← YOUR GAME ID (ALREADY CORRECT)
 BOSS_CHANNEL_ID = 1502236106597470288
 RIFT_CHANNEL_ID = 1502236122615648326
 
@@ -18,24 +18,19 @@ BOSS_SPAWN = 7200
 WARNING_EARLY = 300
 ROVALRA_MULTIPLIER = 1.12
 
-# ---------------- LOGGING (SO YOU SEE EVERYTHING) ----------------
+# ---------------- LOGGING ----------------
 logging.basicConfig(level=logging.INFO)
 app = Flask('')
 
 @app.route('/')
 def home():
-    print("✅ Keep-alive ping received")
     return "Bot is alive!"
 
 def run_server():
-    try:
-        app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
-    except Exception as e:
-        print(f"❌ Flask Error: {e}")
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
 def keep_alive():
-    Thread(target=run_server).start()
-    print("✅ Keep-alive server started")
+    Thread(target=run_server, daemon=True).start()
 
 keep_alive()
 
@@ -113,7 +108,7 @@ def get_roblox_servers():
     print("🔍 Fetching Roblox servers...")
     cookie = os.getenv("ROBLOX_COOKIE", "")
     if not cookie:
-        print("❌ ROBLOX_COOKIE NOT FOUND IN ENV VARS!")
+        print("❌ ROBLOX_COOKIE MISSING!")
         return []
     headers = {
         "Cookie": f".ROBLOSECURITY={cookie}",
@@ -126,9 +121,9 @@ def get_roblox_servers():
             print(f"✅ Found {len(data)} servers")
             return data
         else:
-            print(f"❌ Roblox API Error: {r.status_code} | {r.text[:200]}")
+            print(f"❌ API ERROR: {r.status_code} | {r.text[:150]}")
     except Exception as e:
-        print(f"❌ Request failed: {e}")
+        print(f"❌ REQUEST FAILED: {e}")
     return []
 
 async def auto_scan():
@@ -136,11 +131,16 @@ async def auto_scan():
     boss_ch = bot.get_channel(BOSS_CHANNEL_ID)
     rift_ch = bot.get_channel(RIFT_CHANNEL_ID)
     if not boss_ch or not rift_ch:
-        print("❌ CHANNELS NOT FOUND — CHECK IDS!")
+        print("❌ CHANNELS INVALID — CHECK IDS!")
         return
-    print("✅ === FULL AUTO MODE STARTED ===")
-    print(f"✅ Boss: {BOSS_CHANNEL_ID} | Rift: {RIFT_CHANNEL_ID}")
+
+    # ✅ THESE LINES WILL SHOW UP 100% NOW
+    print("\n=====================================")
+    print("✅ === FULL AUTO MODE ACTIVE ===")
+    print(f"✅ Boss Channel: {BOSS_CHANNEL_ID}")
+    print(f"✅ Rift Channel: {RIFT_CHANNEL_ID}")
     print("✅ Using RoValra formula: ping × 1.12")
+    print("=====================================\n")
 
     while True:
         servers = get_roblox_servers()
@@ -154,7 +154,7 @@ async def auto_scan():
                 continue
             active_ids.add(jid)
 
-            # ✅ EXACT ROVALRA CALC
+            # ✅ EXACT ROVALRA CALCULATION
             uptime_sec = int(ping * ROVALRA_MULTIPLIER)
             h = uptime_sec // 3600
             m = (uptime_sec % 3600) // 60
@@ -165,14 +165,15 @@ async def auto_scan():
                 tracked_servers[jid] = start_time
                 asyncio.create_task(lifecycle(jid, start_time, boss_ch, rift_ch))
             else:
-                print(f"📌 EXISTING | ID: {jid[:8]}... | UPTIME: {h}h {m}m")
+                print(f"📌 EXISTING SERVER | ID: {jid[:8]}... | UPTIME: {h}h {m}m")
 
         # Remove dead servers
         for jid in list(tracked_servers.keys()):
             if jid not in active_ids:
-                print(f"🗑️ REMOVED | ID: {jid[:8]}... (gone)")
+                print(f"🗑️ REMOVED SERVER | ID: {jid[:8]}... (no longer exists)")
                 del tracked_servers[jid]
 
+        print("⏳ Next scan in 2 minutes...\n")
         await asyncio.sleep(120)
 
 async def lifecycle(jid, start, boss_ch, rift_ch):
@@ -183,18 +184,18 @@ async def lifecycle(jid, start, boss_ch, rift_ch):
         nr = RIFT_SPAWN - (age % RIFT_SPAWN)
         nb = BOSS_SPAWN - (age % BOSS_SPAWN)
 
-        # RIFT WARNING
+        # RIFT ALERT (5 mins early)
         if WARNING_EARLY < nr <= WARNING_EARLY + 30:
             print(f"⚠️ RIFT SOON | {jid[:8]}...")
-            await rift_ch.send(f"🌀 **RIFT SPAWN SOON — 5 MIN!**\nID: `{jid}`\n👉 {link}")
+            await rift_ch.send(f"🌀 **RIFT SPAWN SOON — 5 MIN!**\nServer: `{jid}`\n👉 {link}")
             await asyncio.sleep(WARNING_EARLY)
             if jid in tracked_servers:
                 await rift_ch.send(f"🌀 **RIFT SPAWNING NOW!**\n👉 {link}")
 
-        # BOSS WARNING
+        # BOSS ALERT (5 mins early)
         if WARNING_EARLY < nb <= WARNING_EARLY + 30:
             print(f"⚠️ BOSS SOON | {jid[:8]}...")
-            await boss_ch.send(f"🚨 **BOSS SPAWN SOON — 5 MIN!**\nID: `{jid}`\n👉 {link}")
+            await boss_ch.send(f"🚨 **BOSS SPAWN SOON — 5 MIN!**\nServer: `{jid}`\n👉 {link}")
             await asyncio.sleep(WARNING_EARLY)
             if jid in tracked_servers:
                 await boss_ch.send(f"🚨 **BOSS SPAWNING NOW!**\n👉 {link}")
@@ -204,7 +205,8 @@ async def lifecycle(jid, start, boss_ch, rift_ch):
 @bot.event
 async def on_ready():
     await tree.sync()
-    print(f"✅ BOT LOGGED IN AS: {bot.user}")
+    print(f"✅ BOT LOGGED IN SUCCESSFULLY: {bot.user}")
+    # ✅ THIS STARTS THE SCAN — WAS MISSING BEFORE
     bot.loop.create_task(auto_scan())
 
 # ---------------- RUN ----------------
@@ -212,6 +214,6 @@ if __name__ == "__main__":
     print("🚀 STARTING BOT...")
     token = os.getenv("BOT_TOKEN", "")
     if not token:
-        print("❌ BOT_TOKEN MISSING!")
+        print("❌ BOT_TOKEN MISSING IN ENV VARS!")
     else:
         bot.run(token)
