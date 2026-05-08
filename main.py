@@ -1,14 +1,10 @@
-import sys
-import types
-# Fix Python 3.14 audioop error — DO NOT REMOVE
-sys.modules['audioop'] = types.ModuleType('audioop')
-
 import discord
 from discord.ext import commands
 from discord import app_commands
 import asyncio
 import os
 import requests
+import sys
 from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
@@ -16,13 +12,13 @@ from threading import Thread
 # --------------------------
 # ✅ YOUR SETTINGS — EDIT THESE
 # --------------------------
-BOSS_WEBHOOK = "https://discord.com/api/webhooks/1502263569633509487/NGKjFf4EGD32m3UbuafIadrObSSiOxujGXvWcWLSQj8OEAHRcHw-X_Q0OnZOq1r8Ykvw"
-RIFT_WEBHOOK = "https://discord.com/api/webhooks/1502264183956308130/xLuNT-iod8k245vT_jx5u4pLVCasuwtLBAT0NjaJvR3IISH5UA3pjJ43T1bph6ENyzh-"
+BOSS_WEBHOOK = "YOUR_BOSS_WEBHOOK_URL"
+RIFT_WEBHOOK = "YOUR_RIFT_WEBHOOK_URL"
 
 COOLDOWNS = {
     "Bosses": 3600,       # 60 minutes
     "SuperBosses": 3600,  # 60 minutes
-    "Rifts": 10,        # 30 minutes
+    "Rifts": 1800,        # 30 minutes
     "Raids": 7200         # 120 minutes
 }
 
@@ -34,20 +30,20 @@ def run(): app.run(host='0.0.0.0', port=10000)
 def keep_alive(): Thread(target=run, daemon=True).start()
 keep_alive()
 
-# Bot setup
+# Bot setup — FULL INTENTS ENABLED
 intents = discord.Intents.all()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 active_servers = {}
-user_timers = {}
+user_timers = {}  # Structure: { user_id: { timer_name: end_time } }
 
-# Sync slash commands
+# Sync slash commands + show Python version
 @bot.event
 async def on_ready():
     await bot.tree.sync()
     print(f"✅ LOGGED IN AS: {bot.user}")
-    print("✅ READY — TIMERS WILL PING YOU EVERY TIME")
+    print(f"✅ PYTHON VERSION RUNNING: {sys.version}")
 
 # --------------------------
 # 🤖 SERVER TRACKER (5min WARNING)
@@ -55,17 +51,17 @@ async def on_ready():
 async def track_server(link, start_time):
     while link in active_servers:
         age = (datetime.now() - start_time).total_seconds()
-        until_rift = 5400 - (age % 5400)
-        until_boss = 7200 - (age % 7200)
+        until_rift = 5400 - (age % 5400)  # 1h30m cycle
+        until_boss = 7200 - (age % 7200)  # 2h cycle
 
-        # Rift alerts
+        # 🌀 RIFT ALERTS
         if 300 < until_rift <= 315:
             requests.post(RIFT_WEBHOOK, json={"content": f"🌀 **RIFT SPAWNS IN 5 MIN**\n👉 {link}"})
             await asyncio.sleep(300)
             if link in active_servers:
                 requests.post(RIFT_WEBHOOK, json={"content": f"🌀 **RIFT SPAWNING NOW**\n👉 {link}"})
 
-        # Boss alerts
+        # 🚨 BOSS ALERTS
         if 300 < until_boss <= 315:
             requests.post(BOSS_WEBHOOK, json={"content": f"🚨 **BOSS SPAWNS IN 5 MIN**\n👉 {link}"})
             await asyncio.sleep(300)
@@ -85,7 +81,7 @@ async def addserver(interaction: discord.Interaction, link: str, hours: int, min
     await interaction.response.send_message(f"✅ Now tracking:\n{link}")
     bot.loop.create_task(track_server(link, start_time))
 
-@bot.tree.command(name="timer", description="Start a personal cooldown timer")
+@bot.tree.command(name="timer", description="Start a personal cooldown timer — resets if already running")
 @app_commands.choices(t_type=[
     app_commands.Choice(name="Bosses", value="Bosses"),
     app_commands.Choice(name="SuperBosses", value="SuperBosses"),
@@ -98,36 +94,41 @@ async def timer(interaction: discord.Interaction, t_type: str):
     duration = COOLDOWNS[t_type]
     end_time = datetime.now() + timedelta(seconds=duration)
 
-    # Save timer
+    # Create user entry if not exists
     if user_id not in user_timers:
         user_timers[user_id] = {}
+
+    # ✅ FIX: REPLACE / RESET IF ALREADY EXISTS (no duplicates)
     user_timers[user_id][t_type] = end_time
 
     await interaction.response.send_message(
-        f"⏰ **{t_type}** started!\nReady: <t:{int(end_time.timestamp())}:R>"
+        f"⏰ **{t_type}** timer {'RESTARTED' if t_type in user_timers[user_id] else 'STARTED'}!\nReady: <t:{int(end_time.timestamp())}:R>"
     )
 
-    # ✅ FIXED: Task is now DETACHED — will NOT be killed by Render
+    # ✅ DETACHED TASK — RUNS INDEPENDENTLY
     async def wait_and_notify():
         await asyncio.sleep(duration)
 
-        # Remove from list
+        # ✅ ONLY TRIGGER IF THIS IS STILL THE CURRENT SAVED TIMER (prevents old duplicate triggers)
         if user_id in user_timers and t_type in user_timers[user_id]:
-            del user_timers[user_id][t_type]
+            # Double-check: if saved time matches our end time OR time is up
+            if user_timers[user_id][t_type] == end_time or datetime.now() >= user_timers[user_id][t_type]:
+                # Remove it
+                del user_timers[user_id][t_type]
 
-        # Check remaining
-        remaining = user_timers.get(user_id, {})
-        if remaining:
-            rem_text = f"\n📌 Still running: {', '.join(f'**{n}**' for n in remaining.keys())}"
-        else:
-            rem_text = "\n✅ All cooldowns finished!"
+                # Check remaining timers
+                remaining = user_timers.get(user_id, {})
+                if remaining:
+                    rem_text = f"\n📌 Still running: {', '.join(f'**{n}**' for n in remaining.keys())}"
+                else:
+                    rem_text = "\n✅ All cooldowns finished!"
 
-        # ✅ EXACT PING FORMAT <@!USERID>
-        await channel.send(
-            f"🔔 <@!{user_id}> — **{t_type}** TIMER IS FINISHED!{rem_text}"
-        )
+                # ✅ EXACT PING FORMAT <@!USERID>
+                await channel.send(
+                    f"🔔 <@!{user_id}> — **{t_type}** TIMER IS FINISHED!{rem_text}"
+                )
 
-    # Start as independent task
+    # Start independent task
     bot.loop.create_task(wait_and_notify())
 
 @bot.tree.command(name="viewtimers", description="See your active timers")
