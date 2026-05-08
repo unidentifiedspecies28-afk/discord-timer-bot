@@ -25,14 +25,14 @@ intents.message_content = True
 bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
 
+# Added "Super Boss" to the list
 TIMER_OPTIONS = {
     "Bosses": 60 * 60,
+    "Super Boss": 60 * 60,
     "Rift": 30 * 60,
     "Raids": 2 * 60 * 60
 }
 
-# active_timers: {user_id: { "Bosses": task_object, "Rift": task_object... }}
-# end_times: {user_id: { "Bosses": datetime, ... }}
 active_tasks = {}
 end_times = {}
 
@@ -41,18 +41,17 @@ async def run_timer(user_id, name, duration, interaction):
     try:
         await asyncio.sleep(duration)
         
-        # Send notification
+        # This line pings the user correctly
         await interaction.channel.send(
-            f"{interaction.user.mention} ⏰ Your **{name}** cooldown is finished!"
+            f"🔔 <@{user_id}> Your **{name}** cooldown is finished! Go go go!"
         )
         
-        # Cleanup after finishing
+        # Cleanup
         if user_id in active_tasks and name in active_tasks[user_id]:
             del active_tasks[user_id][name]
             del end_times[user_id][name]
             
     except asyncio.CancelledError:
-        # This happens if we restart the timer before it finished
         pass
 
 # ---------------- TIMER SELECT MENU ----------------
@@ -69,14 +68,13 @@ class TimerSelect(discord.ui.Select):
         duration = TIMER_OPTIONS[chosen]
         user_id = interaction.user.id
         
-        # 🛠 FIX: If timer exists, cancel the old one first
+        # If timer exists, cancel the old one first
         if user_id in active_tasks and chosen in active_tasks[user_id]:
             active_tasks[user_id][chosen].cancel()
             status_msg = f"🔄 **{chosen} timer restarted!**"
         else:
             status_msg = f"⏰ **{chosen} timer set!**"
 
-        # Set new end time
         finish_at = datetime.now() + timedelta(seconds=duration)
         
         if user_id not in active_tasks:
@@ -85,7 +83,6 @@ class TimerSelect(discord.ui.Select):
             
         end_times[user_id][chosen] = finish_at
         
-        # Start the background task
         task = asyncio.create_task(run_timer(user_id, chosen, duration, interaction))
         active_tasks[user_id][chosen] = task
 
@@ -112,11 +109,10 @@ async def timers(interaction: discord.Interaction):
         return
 
     lines = []
-    now = datetime.now()
     for name, finish in end_times[user_id].items():
         lines.append(f"• **{name}**: ends <t:{int(finish.timestamp())}:R>")
 
-    await interaction.response.send_message("\n".join(lines), ephemeral=True)
+    await interaction.response.send_message("⏰ **Active Timers:**\n" + "\n".join(lines), ephemeral=True)
 
 @bot.event
 async def on_ready():
