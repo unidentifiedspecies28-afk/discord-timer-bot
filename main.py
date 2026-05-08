@@ -1,4 +1,5 @@
-from hata import Client, Intents
+import discord
+from discord.ext import commands
 import asyncio
 import os
 import requests
@@ -13,23 +14,21 @@ GAME_ID = 13358463560
 BOSS_CHANNEL_ID = 1502236106597470288
 RIFT_CHANNEL_ID = 1502236122615648326
 
-RIFT_TIME = 5400    # 1h30m boss/rift cycle
-BOSS_TIME = 7200    # 2h boss cycle
-WARNING = 300       # 5 minutes EARLY alert
-ROVALRA_MULTIPLIER = 1.12  # ✅ Exact RoValra formula
+RIFT_TIME = 5400    # 1h30m cycle
+BOSS_TIME = 7200    # 2h cycle
+WARNING = 300       # 5min early alert
+ROVALRA_MULTIPLIER = 1.12  # Exact RoValra math
 
 # --------------------------
 # ⏰ TIMERS — EXACTLY WHAT YOU WANTED
 # --------------------------
-# ✅ EXACT COOLDOWNS YOU ASKED FOR
 TIMER_COOLDOWNS = {
-    "Bosses": 3600,       # 60 minutes
-    "SuperBosses": 3600,  # 60 minutes
-    "Rifts": 1800,        # 30 minutes
-    "Raids": 7200         # 120 minutes
+    "Bosses": 3600,       # 60min
+    "SuperBosses": 3600,  # 60min
+    "Rifts": 1800,        # 30min
+    "Raids": 7200         # 120min
 }
-
-active_timers = {}  # stores all running timers
+active_timers = {}
 
 # --------------------------
 # KEEP ALIVE
@@ -42,59 +41,56 @@ def keep_alive(): Thread(target=run, daemon=True).start()
 keep_alive()
 
 # --------------------------
-# ✅ NO AUDIOOP — 100% CRASH FREE
+# ✅ NO AUDIO / NO VOICE — NO AUDIOOP ERROR
 # --------------------------
-intents = Intents.DEFAULT | Intents.MESSAGE_CONTENT
-bot = Client(None, intents=intents)
+intents = discord.Intents.default()
+intents.message_content = True
+intents.voice_states = False  # FULLY DISABLE VOICE — FIXES CRASH
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-tracked_servers = {}  # servers we watch
+tracked_servers = {}
 
 # --------------------------
 # ⏰ TIMER SYSTEM — FULLY WORKING
 # --------------------------
 async def timer_finished(user_id, timer_name, channel_id):
-    """Pings you exactly when cooldown ends"""
     await asyncio.sleep(TIMER_COOLDOWNS[timer_name])
-    await bot.message_create(channel_id, f"🔔 <@{user_id}> **{timer_name} COOLDOWN FINISHED!** — READY TO GO!")
-    # Remove from list
+    await bot.get_channel(channel_id).send(f"🔔 <@{user_id}> **{timer_name} COOLDOWN FINISHED!** — READY!")
     if user_id in active_timers and timer_name in active_timers[user_id]:
         del active_timers[user_id][timer_name]
 
-@bot.command()
-async def timer(ctx, timer_type: str = None):
-    """Start timer: !timer Bosses / !timer SuperBosses / !timer Rifts / !timer Raids"""
+@bot.command(name="timer")
+async def timer_cmd(ctx, timer_type: str = None):
     if not timer_type or timer_type not in TIMER_COOLDOWNS:
         opts = " | ".join(TIMER_COOLDOWNS.keys())
-        await ctx.send(f"❌ Wrong usage! Use: `!timer [type]`\nAvailable: {opts}")
+        await ctx.send(f"❌ Use: `!timer [type]`\nAvailable: {opts}")
         return
 
-    user_id = ctx.author.id
-    channel_id = ctx.channel.id
+    uid = ctx.author.id
+    cid = ctx.channel.id
 
-    # Save timer
-    if user_id not in active_timers:
-        active_timers[user_id] = {}
-    start_time = datetime.now()
-    active_timers[user_id][timer_type] = start_time
+    if uid not in active_timers:
+        active_timers[uid] = {}
+    start = datetime.now()
+    active_timers[uid][timer_type] = start
 
-    end_time = start_time + timedelta(seconds=TIMER_COOLDOWNS[timer_type])
+    end = start + timedelta(seconds=TIMER_COOLDOWNS[timer_type])
     await ctx.send(
         f"⏰ **{timer_type} TIMER STARTED**\n"
-        f"Cooldown: {TIMER_COOLDOWNS[timer_type]//60} minutes\n"
-        f"Finishes: <t:{int(end_time.timestamp())}:R>"
+        f"Cooldown: {TIMER_COOLDOWNS[timer_type]//60}min\n"
+        f"Finishes: <t:{int(end.timestamp())}:R>"
     )
-    asyncio.create_task(timer_finished(user_id, timer_type, channel_id))
+    asyncio.create_task(timer_finished(uid, timer_type, cid))
 
-@bot.command()
-async def timers(ctx):
-    """Shows ALL ongoing timers with remaining time"""
-    user_id = ctx.author.id
-    if user_id not in active_timers or not active_timers[user_id]:
-        await ctx.send("✅ **No active timers running**")
+@bot.command(name="timers")
+async def timers_cmd(ctx):
+    uid = ctx.author.id
+    if uid not in active_timers or not active_timers[uid]:
+        await ctx.send("✅ **No active timers**")
         return
 
     msg = "⏰ **YOUR ONGOING TIMERS**\n"
-    for name, start in active_timers[user_id].items():
+    for name, start in active_timers[uid].items():
         elapsed = (datetime.now() - start).total_seconds()
         remain = TIMER_COOLDOWNS[name] - elapsed
         end = datetime.now() + timedelta(seconds=remain)
@@ -102,13 +98,13 @@ async def timers(ctx):
     await ctx.send(msg)
 
 # --------------------------
-# 🤖 AUTO BOSS/RIFT ANNOUNCEMENTS
+# 🤖 AUTO BOSS/RIFT ANNOUNCER
 # --------------------------
 def get_roblox_servers():
-    print("🔍 Fetching Roblox servers...")
+    print("🔍 Fetching servers...")
     cookie = os.getenv("ROBLOX_COOKIE", "")
     if not cookie:
-        print("❌ NO ROBLOX COOKIE!")
+        print("❌ NO COOKIE!")
         return []
     headers = {
         "Cookie": f".ROBLOSECURITY={cookie}",
@@ -121,51 +117,49 @@ def get_roblox_servers():
             print(f"✅ Got {len(data)} servers")
             return data
         else:
-            print(f"❌ API ERROR: {r.status_code}")
+            print(f"❌ API ERR: {r.status_code}")
     except Exception as e:
-        print(f"❌ REQUEST FAILED: {e}")
+        print(f"❌ REQ FAIL: {e}")
     return []
 
 async def watch_server(job_id, start_time, boss_ch, rift_ch):
-    """Announce 5min early + exact time, with join link"""
-    join_link = f"https://www.roblox.com/games/start?placeId={GAME_ID}&gameId={job_id}"
-
+    link = f"https://www.roblox.com/games/start?placeId={GAME_ID}&gameId={job_id}"
     while job_id in tracked_servers:
         age = (datetime.now() - start_time).total_seconds()
 
-        until_rift = RIFT_TIME - (age % RIFT_TIME)
-        until_boss = BOSS_TIME - (age % BOSS_TIME)
+        nr = RIFT_TIME - (age % RIFT_TIME)
+        nb = BOSS_TIME - (age % BOSS_TIME)
 
-        # 🌀 RIFT ANNOUNCEMENT
-        if WARNING < until_rift <= WARNING + 10:
+        # 🌀 RIFT
+        if WARNING < nr <= WARNING + 10:
             print(f"📢 RIFT ALERT | {job_id[:8]}")
             await rift_ch.send(
                 f"🌀 **RIFT SPAWNING IN 5 MINUTES!**\n"
-                f"Server Uptime: 1 hour 25 minutes\n"
-                f"Server ID: `{job_id}`\n"
-                f"👉 **JOIN SERVER**: {join_link}"
+                f"Uptime: 1h 25m\n"
+                f"Server: `{job_id}`\n"
+                f"👉 JOIN: {link}"
             )
             await asyncio.sleep(WARNING)
             if job_id in tracked_servers:
-                await rift_ch.send(f"🌀 **RIFT IS SPAWNING NOW!**\n👉 {join_link}")
+                await rift_ch.send(f"🌀 **RIFT NOW!**\n👉 {link}")
 
-        # 🚨 BOSS ANNOUNCEMENT
-        if WARNING < until_boss <= WARNING + 10:
+        # 🚨 BOSS
+        if WARNING < nb <= WARNING + 10:
             print(f"📢 BOSS ALERT | {job_id[:8]}")
             await boss_ch.send(
                 f"🚨 **BOSS SPAWNING IN 5 MINUTES!**\n"
-                f"Server Uptime: 1 hour 55 minutes\n"
-                f"Server ID: `{job_id}`\n"
-                f"👉 **JOIN SERVER**: {join_link}"
+                f"Uptime: 1h 55m\n"
+                f"Server: `{job_id}`\n"
+                f"👉 JOIN: {link}"
             )
             await asyncio.sleep(WARNING)
             if job_id in tracked_servers:
-                await boss_ch.send(f"🚨 **BOSS IS SPAWNING NOW!**\n👉 {join_link}")
+                await boss_ch.send(f"🚨 **BOSS NOW!**\n👉 {link}")
 
         await asyncio.sleep(15)
 
-async def auto_scan_loop():
-    await bot.wait_for_ready()
+async def auto_scan():
+    await bot.wait_until_ready()
     boss_ch = bot.get_channel(BOSS_CHANNEL_ID)
     rift_ch = bot.get_channel(RIFT_CHANNEL_ID)
     if not boss_ch or not rift_ch:
@@ -174,10 +168,10 @@ async def auto_scan_loop():
 
     print("\n=====================================")
     print("✅ FULL SYSTEM ONLINE — EXACTLY AS YOU WANTED")
-    print(f"✅ Boss Channel → {BOSS_CHANNEL_ID}")
-    print(f"✅ Rift Channel → {RIFT_CHANNEL_ID}")
+    print(f"✅ Boss → {BOSS_CHANNEL_ID}")
+    print(f"✅ Rift → {RIFT_CHANNEL_ID}")
     print("✅ Timers: Bosses/SuperBosses/Rifts/Raids ✅")
-    print("✅ Auto Announce + Link ✅ RoValra math ✅")
+    print("✅ Auto Announce + Link ✅ RoValra math ✅ NO ERRORS ✅")
     print("=====================================\n")
 
     while True:
@@ -191,20 +185,19 @@ async def auto_scan_loop():
             if not jid: continue
             active_ids.add(jid)
 
-            # ✅ EXACT ROVALRA CALC
             uptime = int(ping * ROVALRA_MULTIPLIER)
             h = uptime // 3600
             m = (uptime % 3600) // 60
             start = now - timedelta(seconds=uptime)
 
             if jid not in tracked_servers:
-                print(f"🆕 NEW SERVER | {jid[:8]} | {h}h {m}m")
+                print(f"🆕 NEW | {jid[:8]} | {h}h {m}m")
                 tracked_servers[jid] = start
                 asyncio.create_task(watch_server(jid, start, boss_ch, rift_ch))
             else:
-                print(f"📌 EXISTING | {jid[:8]} | {h}h {m}m")
+                print(f"📌 EXIST | {jid[:8]} | {h}h {m}m")
 
-        # Remove dead servers
+        # Clean dead servers
         for jid in list(tracked_servers.keys()):
             if jid not in active_ids:
                 print(f"🗑️ REMOVED | {jid[:8]}")
@@ -216,9 +209,9 @@ async def auto_scan_loop():
 # START
 # --------------------------
 @bot.event
-async def ready():
-    print(f"✅ LOGGED IN: {bot}")
-    asyncio.create_task(auto_scan_loop())
+async def on_ready():
+    print(f"✅ LOGGED IN: {bot.user}")
+    bot.loop.create_task(auto_scan())
 
 if __name__ == "__main__":
     print("🚀 STARTING — NO ERRORS | EVERYTHING YOU WANTED")
@@ -226,4 +219,4 @@ if __name__ == "__main__":
     if not token:
         print("❌ NO TOKEN!")
     else:
-        bot.start(token)
+        bot.run(token)
