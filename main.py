@@ -88,7 +88,7 @@ class TimerView(discord.ui.View):
         super().__init__(timeout=180)
         self.add_item(TimerSelect())
 
-@tree.command(name="timer", description="Start timer")
+@tree.command(name="reminder", description="Starts a timer for Rift, SuperBoss, Boss or Raids")
 async def timer(interaction):
     await interaction.response.send_message("Select:", view=TimerView())
 
