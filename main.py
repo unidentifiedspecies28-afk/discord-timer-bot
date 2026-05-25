@@ -16,7 +16,7 @@ BOSS_WEBHOOK = "YOUR_BOSS_WEBHOOK_URL"
 RIFT_WEBHOOK = "YOUR_RIFT_WEBHOOK_URL"
 
 # ✅ ONLY THIS CHANNEL CAN USE COMMANDS
-ALLOWED_CHANNEL_ID = 1466811692372594840
+ALLOWED_CHANNEL_ID = "ALLOWED_CHANNEL"
 
 COOLDOWNS = {
     "Bosses": 3600,       # 60 minutes
@@ -193,4 +193,4 @@ async def viewtimers(interaction: discord.Interaction):
 # START BOT
 # --------------------------
 
-bot.run(BOT_TOKEN)
+bot.run("BOT_TOKEN")
