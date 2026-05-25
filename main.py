@@ -192,3 +192,5 @@ async def viewtimers(interaction: discord.Interaction):
 # --------------------------
 # START BOT
 # --------------------------
+
+bot.run(BOT_TOKEN)
